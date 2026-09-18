@@ -6,6 +6,8 @@
 #                       async initial load and by the ctrl-x reload).
 #   picker.sh --copy <text>
 #                       copy <text> to the clipboard (used by ctrl-y).
+#   picker.sh --preview <pane>
+#                       capture that pane for fzf's preview window.
 #
 # Rows come from agents.sh, which pairs each running Claude with the tmux pane it
 # occupies. Two kinds of row jump differently:
@@ -30,6 +32,26 @@ fi
 if [ "${1:-}" = '--copy' ]; then
   copy_to_clipboard "${2:-}" &&
     tmux display-message "tmux-claude-hatch: copied ${2:-}"
+  exit 0
+fi
+
+# capture-pane returns the whole pane, and a Claude that has written less than a
+# screenful leaves the rest blank. The preview window follows its last line, so
+# an un-trimmed capture parks the view in that padding and reads as an empty
+# preview. Drop the trailing blank lines so `follow` lands on real output.
+if [ "${1:-}" = '--preview' ]; then
+  tmux capture-pane -ept "${2:-}" 2>/dev/null |
+    awk -v esc="$(printf '\033')" '
+      {
+        line[NR] = $0
+        bare = $0
+        # Attributes are not content. Built as a dynamic regex because a literal
+        # \033 in a regex is not portable across awks.
+        gsub(esc "\\[[0-9;?]*[ -/]*[@-~]", "", bare)
+        if (bare ~ /[^ \t]/) last = NR
+      }
+      END { for (i = 1; i <= last; i++) print line[i] }
+    '
   exit 0
 fi
 
@@ -68,6 +90,7 @@ fzf --track --version >/dev/null 2>&1 && sync_opts+=(--track)
 sel=$("${list_cmd[@]}" | fzf --ansi --delimiter='\t' --with-nth=5,6,7,8 \
   --reverse --cycle --header='Claude agents · enter: jump · ctrl-x: kill · ctrl-y: copy' \
   --preview='tmux capture-pane -ept {2}' --preview-window='up,70%,follow' \
+  --preview="$self --preview {2}" --preview-window='up,70%,follow' \
   --bind="ctrl-x:execute-silent(kill {3})+reload(sleep 0.3; $self --list)" \
   --bind="ctrl-y:execute-silent($self --copy {7})+abort" \
   ${sync_opts[@]+"${sync_opts[@]}"} \
