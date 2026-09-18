@@ -112,7 +112,16 @@ Inside the picker:
 | `ctrl-y`                  | Copy the highlighted agent's location (e.g. `claude-88074b0e:0.0`) and close |
 | `↑` / `↓`, type to filter | fzf navigation                                                               |
 
-Agents needing your attention (`waiting`, `idle`) sort to the top.
+The age column shows how long ago each agent was last active. `@claude_sort`
+picks how the rows are ordered:
+
+- **`status`** (default) — agents needing your attention first (`waiting`, then
+  `idle`, then `working`), and within each status the most recently active on
+  top. An agent whose last activity cannot be read shows `-` and heads its
+  status group.
+- **`recent`** — last activity alone, most recently used first, regardless of
+  status. Here the age *is* the order, so when it cannot be read the agent's
+  start time stands in for it rather than showing `-`.
 
 Every running Claude gets its own row — the picker identifies each by its
 process, not by its tmux session. So several agents in one project all show up
@@ -128,6 +137,7 @@ set -g @claude_list_key       'u'        # prefix key: open the picker
 set -g @claude_command        'claude'   # command run in new sessions
 set -g @claude_args           ''         # extra args appended to the command
 set -g @claude_session_prefix 'claude-'  # tmux session name prefix
+set -g @claude_sort           'status'   # picker order: 'status' or 'recent'
 set -g @claude_popup_width     '90%'     # popup width
 set -g @claude_popup_height    '90%'     # popup height
 set -g @claude_fzf_options    ''         # extra options passed to the fzf picker
