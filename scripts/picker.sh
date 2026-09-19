@@ -49,6 +49,14 @@ extra_opts=()
 fzf_options="$(get_tmux_option @claude_fzf_options '')"
 [ -n "$fzf_options" ] && eval "extra_opts=($fzf_options)"
 
+# Put the cursor on the best match while typing. fzf's --track re-pins whatever
+# item was current after *every* result update, including the one a keystroke
+# causes, so the cursor ends up next to the best match rather than on it. No
+# path here wants that pinning: the query should follow the match, and the
+# cached-to-fresh swap below should land on the top row of the new order. So
+# --track is gone, and `change:first` states the default outright.
+cursor_opts=(--bind='change:first')
+
 # Load the session list asynchronously
 list_cmd=("$self" --list)
 sync_opts=()
@@ -58,7 +66,6 @@ if [ -s "$cache" ] && [ -n "$mtime" ] && [ $((now - mtime)) -lt 3600 ]; then
   list_cmd=(cat "$cache")
   sync_opts=(--bind "load:unbind(load)+reload-sync($self --list)")
 fi
-fzf --track --version >/dev/null 2>&1 && sync_opts+=(--track)
 
 # ctrl-x kills the Claude process itself: a dedicated session dies with its last
 # window, while a loose pane keeps the shell that hosted it. The reload waits a
@@ -70,6 +77,7 @@ sel=$("${list_cmd[@]}" | fzf --ansi --delimiter='\t' --with-nth=5,6,7,8 \
   --preview='tmux capture-pane -ept {2}' --preview-window='up,70%,follow' \
   --bind="ctrl-x:execute-silent(kill {3})+reload(sleep 0.3; $self --list)" \
   --bind="ctrl-y:execute-silent($self --copy {7})+abort" \
+  ${cursor_opts[@]+"${cursor_opts[@]}"} \
   ${sync_opts[@]+"${sync_opts[@]}"} \
   ${extra_opts[@]+"${extra_opts[@]}"})
 
