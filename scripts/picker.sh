@@ -43,14 +43,19 @@ if [ "${1:-}" = '--preview' ]; then
   tmux capture-pane -ept "${2:-}" 2>/dev/null |
     awk -v esc="$(printf '\033')" '
       {
-        line[NR] = $0
         bare = $0
         # Attributes are not content. Built as a dynamic regex because a literal
         # \033 in a regex is not portable across awks.
         gsub(esc "\\[[0-9;?]*[ -/]*[@-~]", "", bare)
-        if (bare ~ /[^ \t]/) last = NR
+        # A blank line is only padding if nothing follows it, so hold it until a
+        # real line proves otherwise. Whatever is still held at EOF is the
+        # padding, and goes unprinted.
+        if (bare ~ /[^ \t]/) {
+          for (i = 1; i <= held; i++) print blank[i]
+          held = 0
+          print
+        } else blank[++held] = $0
       }
-      END { for (i = 1; i <= last; i++) print line[i] }
     '
   exit 0
 fi
