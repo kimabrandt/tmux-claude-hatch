@@ -112,11 +112,32 @@ Inside the picker:
 | `ctrl-y`                  | Copy the highlighted agent's location (e.g. `claude-88074b0e:0.0`) and close |
 | `↑` / `↓`, type to filter | fzf navigation                                                               |
 
-Agents needing your attention (`waiting`, `idle`) sort to the top.
+The age column shows how long ago each agent was last active. `@claude_sort`
+picks how the rows are ordered:
+
+- **`status`** (default) — agents needing your attention first (`waiting`, then
+  `idle`, then `working`), and within each status the most recently active on
+  top. An agent whose last activity cannot be read shows `-` and heads its
+  status group.
+- **`recent`** — last activity alone, most recently used first, regardless of
+  status. Here the age *is* the order, so an agent whose last activity cannot
+  be read is placed by its start time instead — but the column still shows `-`
+  rather than that start time, which would climb forever and never reset when
+  the agent answered you.
 
 Every running Claude gets its own row — the picker identifies each by its
 process, not by its tmux session. So several agents in one project all show up
 separately, as does a Claude you started by hand in an ordinary pane.
+
+Last activity is the newest timestamped entry in the session's transcript —
+not the file's mtime, which Claude Code bumps with bookkeeping writes while the
+agent sits idle. The transcript lives in the config
+dir of the profile the agent runs under. If `@claude_command` is a wrapper that
+spans several profiles, have its `agents --json` tag each session with a
+`profile` field and the age column follows the agent into that profile's dir;
+`~/.claude-<profile>` is the assumed location, with a plain `~/.claude` for the
+default. Without such a field the picker still searches `~/.claude` and any
+`~/.claude-*` beside it, since session ids are unique.
 
 ## Options
 
@@ -128,9 +149,11 @@ set -g @claude_list_key       'u'        # prefix key: open the picker
 set -g @claude_command        'claude'   # command run in new sessions
 set -g @claude_args           ''         # extra args appended to the command
 set -g @claude_session_prefix 'claude-'  # tmux session name prefix
+set -g @claude_sort           'status'   # picker order: 'status' or 'recent'
 set -g @claude_popup_width     '90%'     # popup width
 set -g @claude_popup_height    '90%'     # popup height
 set -g @claude_fzf_options    ''         # extra options passed to the fzf picker
+set -g @claude_preview_lines  '1000'     # pane scrollback lines in the preview (0 = visible only)
 set -g @claude_forward_bell   'on'       # highlight the origin window on a bell
 ```
 
@@ -235,6 +258,25 @@ ring when Claude asks for permission, or under `PreToolUse` matching
 `AskUserQuestion` to ring when it asks you a question.
 
 Set `@claude_forward_bell 'off'` to disable forwarding altogether.
+
+### Scrolling the preview
+
+The preview holds the last `@claude_preview_lines` lines of the pane's
+scrollback (1000 by default) and starts pinned to the bottom, so a session with
+more output than fits can be scrolled back through:
+
+| Key                       | Action                                     |
+| ------------------------- | ------------------------------------------ |
+| `ctrl-u` / `ctrl-d`       | scroll the preview half a page             |
+| `shift-up` / `shift-down` | scroll the preview one line (fzf built-in) |
+| `ctrl-f`                  | re-capture the pane, back to the end       |
+
+The mouse wheel scrolls the preview too, when tmux has `set -g mouse on`.
+
+The preview is a snapshot taken when you land on a row, not a live tail, so
+`ctrl-f` doubles as a refresh: it re-runs the capture and returns to the end of
+it. Moving to another row and back does the same. Set `@claude_preview_lines
+'0'` to capture only the visible screen, as before.
 
 ### Customizing the fzf picker
 

@@ -6,6 +6,8 @@
 #                       async initial load and by the ctrl-x reload).
 #   picker.sh --copy <text>
 #                       copy <text> to the clipboard (used by ctrl-y).
+#   picker.sh --preview <pane>
+#                       capture that pane for fzf's preview window.
 #
 # Rows come from agents.sh, which pairs each running Claude with the tmux pane it
 # occupies. Two kinds of row jump differently:
@@ -30,6 +32,47 @@ fi
 if [ "${1:-}" = '--copy' ]; then
   copy_to_clipboard "${2:-}" &&
     tmux display-message "tmux-claude-hatch: copied ${2:-}"
+  exit 0
+fi
+
+# capture-pane returns the whole pane, and Claude pads the gap between the last
+# transcript line and its input box out to the bottom of the pane. That padding
+# is interior — the box follows it — so trimming only the end of the capture
+# leaves it in place, and the preview window, which follows the last line, parks
+# in it and reads as empty. Collapse the padding instead so `follow` lands on
+# real output.
+#
+# Without -S the capture stops at the top of the screen, leaving nothing to
+# scroll back into; -S -<n> prepends n lines of scrollback. @claude_preview_lines
+# sets n; 0 keeps the capture to the visible screen.
+if [ "${1:-}" = '--preview' ]; then
+  preview_lines="$(get_tmux_option @claude_preview_lines '1000')"
+  capture=(tmux capture-pane -ept "${2:-}")
+  [ "$preview_lines" -gt 0 ] 2>/dev/null && capture+=(-S "-$preview_lines")
+  "${capture[@]}" 2>/dev/null |
+    awk -v esc="$(printf '\033')" '
+      {
+        bare = $0
+        # Attributes are not content. Built as a dynamic regex because a literal
+        # \033 in a regex is not portable across awks.
+        gsub(esc "\\[[0-9;?]*[ -/]*[@-~]", "", bare)
+        # Hold a run of blank lines until the next real line says what it was.
+        # Keep the first of the run: it carries the attribute reset that closed
+        # the line above it.
+        if (bare !~ /[^ \t]/) {
+          if (held++ == 0) pad = $0
+          next
+        }
+        # Any run longer than a line is layout, not content, so one blank stands
+        # in for the whole run. A run that opens the capture separates nothing,
+        # and a run still held at EOF is the trailing padding the follow view
+        # would park in — both go unprinted.
+        if (seen && held) print pad
+        held = 0
+        seen = 1
+        print
+      }
+    '
   exit 0
 fi
 
@@ -72,11 +115,20 @@ fi
 # beat so the supervisor has dropped the agent from `claude agents --json`.
 # ctrl-y copies the agent's location (session:window.pane, e.g. claude-88074b0e:0.0)
 # and closes the picker.
+#
+# The preview is a snapshot taken per selection, shown from the bottom
+# (`follow`). ctrl-f re-captures the pane and returns to the end of it, so it
+# doubles as a refresh. shift-up/shift-down already scroll it by a line; the
+# half-page keys are the addition. The mouse wheel scrolls it too, when tmux
+# has `mouse on`.
 sel=$("${list_cmd[@]}" | fzf --ansi --delimiter='\t' --with-nth=5,6,7,8 \
-  --reverse --cycle --header='Claude agents · enter: jump · ctrl-x: kill · ctrl-y: copy' \
-  --preview='tmux capture-pane -ept {2}' --preview-window='up,70%,follow' \
+  --reverse --cycle \
+  --header='Claude agents · enter: jump · ctrl-x: kill · ctrl-y: copy · ctrl-u/ctrl-d: scroll preview' \
+  --preview="$self --preview {2}" --preview-window='up,70%,follow' \
   --bind="ctrl-x:execute-silent(kill {3})+reload(sleep 0.3; $self --list)" \
   --bind="ctrl-y:execute-silent($self --copy {7})+abort" \
+  --bind='ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down' \
+  --bind='ctrl-f:refresh-preview+preview-bottom' \
   ${cursor_opts[@]+"${cursor_opts[@]}"} \
   ${sync_opts[@]+"${sync_opts[@]}"} \
   ${extra_opts[@]+"${extra_opts[@]}"})
