@@ -41,8 +41,15 @@ fi
 # leaves it in place, and the preview window, which follows the last line, parks
 # in it and reads as empty. Collapse the padding instead so `follow` lands on
 # real output.
+#
+# Without -S the capture stops at the top of the screen, leaving nothing to
+# scroll back into; -S -<n> prepends n lines of scrollback. @claude_preview_lines
+# sets n; 0 keeps the capture to the visible screen.
 if [ "${1:-}" = '--preview' ]; then
-  tmux capture-pane -ept "${2:-}" 2>/dev/null |
+  preview_lines="$(get_tmux_option @claude_preview_lines '1000')"
+  capture=(tmux capture-pane -ept "${2:-}")
+  [ "$preview_lines" -gt 0 ] 2>/dev/null && capture+=(-S "-$preview_lines")
+  "${capture[@]}" 2>/dev/null |
     awk -v esc="$(printf '\033')" '
       {
         bare = $0
@@ -101,12 +108,20 @@ fzf --track --version >/dev/null 2>&1 && sync_opts+=(--track)
 # beat so the supervisor has dropped the agent from `claude agents --json`.
 # ctrl-y copies the agent's location (session:window.pane, e.g. claude-88074b0e:0.0)
 # and closes the picker.
+#
+# The preview is a snapshot taken per selection, shown from the bottom
+# (`follow`). ctrl-f re-captures the pane and returns to the end of it, so it
+# doubles as a refresh. shift-up/shift-down already scroll it by a line; the
+# half-page keys are the addition. The mouse wheel scrolls it too, when tmux
+# has `mouse on`.
 sel=$("${list_cmd[@]}" | fzf --ansi --delimiter='\t' --with-nth=5,6,7,8 \
-  --reverse --cycle --header='Claude agents · enter: jump · ctrl-x: kill · ctrl-y: copy' \
-  --preview='tmux capture-pane -ept {2}' --preview-window='up,70%,follow' \
+  --reverse --cycle \
+  --header='Claude agents · enter: jump · ctrl-x: kill · ctrl-y: copy · ctrl-u/ctrl-d: scroll preview' \
   --preview="$self --preview {2}" --preview-window='up,70%,follow' \
   --bind="ctrl-x:execute-silent(kill {3})+reload(sleep 0.3; $self --list)" \
   --bind="ctrl-y:execute-silent($self --copy {7})+abort" \
+  --bind='ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down' \
+  --bind='ctrl-f:refresh-preview+preview-bottom' \
   ${sync_opts[@]+"${sync_opts[@]}"} \
   ${extra_opts[@]+"${extra_opts[@]}"})
 

@@ -131,6 +131,7 @@ set -g @claude_session_prefix 'claude-'  # tmux session name prefix
 set -g @claude_popup_width     '90%'     # popup width
 set -g @claude_popup_height    '90%'     # popup height
 set -g @claude_fzf_options    ''         # extra options passed to the fzf picker
+set -g @claude_preview_lines  '1000'     # pane scrollback lines in the preview (0 = visible only)
 set -g @claude_forward_bell   'on'       # highlight the origin window on a bell
 ```
 
@@ -235,6 +236,25 @@ ring when Claude asks for permission, or under `PreToolUse` matching
 `AskUserQuestion` to ring when it asks you a question.
 
 Set `@claude_forward_bell 'off'` to disable forwarding altogether.
+
+### Scrolling the preview
+
+The preview holds the last `@claude_preview_lines` lines of the pane's
+scrollback (1000 by default) and starts pinned to the bottom, so a session with
+more output than fits can be scrolled back through:
+
+| Key                       | Action                                     |
+| ------------------------- | ------------------------------------------ |
+| `ctrl-u` / `ctrl-d`       | scroll the preview half a page             |
+| `shift-up` / `shift-down` | scroll the preview one line (fzf built-in) |
+| `ctrl-f`                  | re-capture the pane, back to the end       |
+
+The mouse wheel scrolls the preview too, when tmux has `set -g mouse on`.
+
+The preview is a snapshot taken when you land on a row, not a live tail, so
+`ctrl-f` doubles as a refresh: it re-runs the capture and returns to the end of
+it. Moving to another row and back does the same. Set `@claude_preview_lines
+'0'` to capture only the visible screen, as before.
 
 ### Customizing the fzf picker
 
