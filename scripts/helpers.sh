@@ -38,7 +38,20 @@ file_mtime() {
   stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
 }
 
-# claude_transcript_mtime <session-id>
+# claude_profile_dir <profile>
+# Config dir for a profile name, following the `~/.claude-<profile>` convention,
+# with the unsuffixed `~/.claude` as the default profile. Upstream `claude` has
+# no notion of profiles; the name comes from a wrapper in the @claude_command
+# slot that runs several config dirs side by side and tags each session with the
+# one it lives in. An empty name means no wrapper said, so use the default.
+claude_profile_dir() {
+  case "$1" in
+  '' | dev | default) printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ;;
+  *) printf '%s' "$HOME/.claude-$1" ;;
+  esac
+}
+
+# claude_transcript_mtime <session-id> [profile]
 # Epoch seconds of the last write to that Claude session's transcript — i.e. when
 # the agent last did anything. `claude agents --json` reports only `startedAt`,
 # never a last-activity time, so the transcript's mtime stands in for it.
@@ -46,10 +59,18 @@ file_mtime() {
 # Found by glob so we never have to reproduce Claude's cwd -> project-slug
 # encoding. The path is an internal Claude Code detail and may move; an empty
 # result just renders the age column as '-'.
+#
+# CLAUDE_CONFIG_DIR is read from *this* process, so it only ever names the
+# profile the picker itself was started under. An agent running under a second
+# profile keeps its transcript in that profile's config dir, where a search of
+# ours would never reach — hence the profile hint, and the widened fallback for
+# when there is none. Session ids are uuids, so searching extra dirs cannot
+# match the wrong agent, only cost a few more globs.
 claude_transcript_mtime() {
-  local base f
-  base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  for f in "$base"/projects/*/"$1".jsonl; do
+  local f
+  for f in "$(claude_profile_dir "${2:-}")"/projects/*/"$1".jsonl \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$1".jsonl \
+    "$HOME"/.claude-*/projects/*/"$1".jsonl; do
     [ -f "$f" ] && {
       file_mtime "$f"
       return

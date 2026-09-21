@@ -120,12 +120,22 @@ picks how the rows are ordered:
   top. An agent whose last activity cannot be read shows `-` and heads its
   status group.
 - **`recent`** — last activity alone, most recently used first, regardless of
-  status. Here the age *is* the order, so when it cannot be read the agent's
-  start time stands in for it rather than showing `-`.
+  status. Here the age *is* the order, so an agent whose last activity cannot
+  be read is placed by its start time instead — but the column still shows `-`
+  rather than that start time, which would climb forever and never reset when
+  the agent answered you.
 
 Every running Claude gets its own row — the picker identifies each by its
 process, not by its tmux session. So several agents in one project all show up
 separately, as does a Claude you started by hand in an ordinary pane.
+
+Last activity is read from the session's transcript, which lives in the config
+dir of the profile the agent runs under. If `@claude_command` is a wrapper that
+spans several profiles, have its `agents --json` tag each session with a
+`profile` field and the age column follows the agent into that profile's dir;
+`~/.claude-<profile>` is the assumed location, with a plain `~/.claude` for the
+default. Without such a field the picker still searches `~/.claude` and any
+`~/.claude-*` beside it, since session ids are unique.
 
 ## Options
 

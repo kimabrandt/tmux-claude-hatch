@@ -28,12 +28,15 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 agents="$($(get_tmux_option @claude_command 'claude') agents --json 2>/dev/null)" || exit 0
 rows="$(printf '%s' "$agents" |
-  jq -r '.[] | select(.kind == "interactive") | [.pid, .status, .sessionId, .cwd, .startedAt] | @tsv' 2>/dev/null)"
+  jq -r '.[] | select(.kind == "interactive")
+         | [.pid, .status, .sessionId, .cwd, .startedAt, (.profile // "")] | @tsv' 2>/dev/null)"
 [ -n "$rows" ] || exit 0
 
-# Resolved out here because only `stat`, outside awk, can read an mtime.
-mtimes="$(printf '%s\n' "$rows" | cut -f3 | while IFS= read -r sid; do
-  printf 'M\t%s\t%s\n' "$sid" "$(claude_transcript_mtime "$sid")"
+# Resolved out here because only `stat`, outside awk, can read an mtime. The
+# profile rides along because a session's transcript lives under the config dir
+# of the profile it belongs to, which is not necessarily the picker's own.
+mtimes="$(printf '%s\n' "$rows" | cut -f3,6 | while IFS=$'\t' read -r sid profile; do
+  printf 'M\t%s\t%s\n' "$sid" "$(claude_transcript_mtime "$sid" "$profile")"
 done)"
 
 # Three tagged streams into one awk: pid->tty, tty->pane, session->last-activity.
@@ -59,24 +62,35 @@ done)"
     else if ($3 == "busy")    { icon = "\033[31m●\033[0m working"; rank = 3 }  # red    - busy, leave it
     else                      { icon = "\033[90m●\033[0m   ?    "; rank = 2 }  # grey   - unrecognised status
 
-    # UNKNOWN means the transcript could not be read, so last activity is a
-    # mystery. In recent mode the age is the whole order, so startedAt stands in
-    # for it: a session that has done nothing was last active when it started.
-    # In status mode the age is only a tie-break, so leave it honestly unknown.
+    # Seconds since last activity, or UNKNOWN when the transcript could not be
+    # read. This is the only thing the age column is ever allowed to show.
     secs = (seen_at[$4] != "") ? now - seen_at[$4] : UNKNOWN
-    if (secs == UNKNOWN && sort_by == "recent" && $6 > 0)
-      secs = int(now - $6 / 1000)
-    if (secs < 0) secs = 0                       # mtime in the future: clock skew
-    if (secs > UNKNOWN) secs = UNKNOWN - 1
+    if (secs != UNKNOWN) {
+      if (secs < 0) secs = 0                     # mtime in the future: clock skew
+      if (secs >= UNKNOWN) secs = UNKNOWN - 1
+    }
     age = (secs != UNKNOWN) ? int(secs / 60) "m" : "-"
     kind = (index(sess[tty], prefix) == 1) ? "dedicated" : "loose"
 
     path = $5
     if (index(path, home) == 1) path = "~" substr(path, length(home) + 1)
 
-    # An unknown age leads its status group. In recent mode it survives only
-    # when startedAt was missing too, and then it trails: no claim to recency.
-    agekey = (secs != UNKNOWN) ? secs : (sort_by == "recent" ? UNKNOWN : -1)
+    # startedAt is a birth time, not a use time: it grows for as long as the
+    # process lives and never resets when the agent answers you, so rendering it
+    # in the age column reads as a stopwatch stuck mid-count. It can still place
+    # a row, though. In recent mode the age *is* the order, so an agent with no
+    # readable activity is positioned by when it started — and still displays
+    # '-', because that position is a guess, not a measurement. In status mode
+    # the age is only a tie-break, so an unknown one leads its status group.
+    if (secs != UNKNOWN)
+      agekey = secs
+    else if (sort_by == "recent" && $6 > 0) {
+      agekey = int(now - $6 / 1000)
+      if (agekey < 0) agekey = 0
+      if (agekey >= UNKNOWN) agekey = UNKNOWN - 1
+    }
+    else
+      agekey = (sort_by == "recent") ? UNKNOWN : -1
 
     # One composite key: age breaks ties within a status rank, and carries the
     # whole order in recent mode.
