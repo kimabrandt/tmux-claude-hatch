@@ -35,10 +35,12 @@ if [ "${1:-}" = '--copy' ]; then
   exit 0
 fi
 
-# capture-pane returns the whole pane, and a Claude that has written less than a
-# screenful leaves the rest blank. The preview window follows its last line, so
-# an un-trimmed capture parks the view in that padding and reads as an empty
-# preview. Drop the trailing blank lines so `follow` lands on real output.
+# capture-pane returns the whole pane, and Claude pads the gap between the last
+# transcript line and its input box out to the bottom of the pane. That padding
+# is interior — the box follows it — so trimming only the end of the capture
+# leaves it in place, and the preview window, which follows the last line, parks
+# in it and reads as empty. Collapse the padding instead so `follow` lands on
+# real output.
 if [ "${1:-}" = '--preview' ]; then
   tmux capture-pane -ept "${2:-}" 2>/dev/null |
     awk -v esc="$(printf '\033')" '
@@ -47,14 +49,21 @@ if [ "${1:-}" = '--preview' ]; then
         # Attributes are not content. Built as a dynamic regex because a literal
         # \033 in a regex is not portable across awks.
         gsub(esc "\\[[0-9;?]*[ -/]*[@-~]", "", bare)
-        # A blank line is only padding if nothing follows it, so hold it until a
-        # real line proves otherwise. Whatever is still held at EOF is the
-        # padding, and goes unprinted.
-        if (bare ~ /[^ \t]/) {
-          for (i = 1; i <= held; i++) print blank[i]
-          held = 0
-          print
-        } else blank[++held] = $0
+        # Hold a run of blank lines until the next real line says what it was.
+        # Keep the first of the run: it carries the attribute reset that closed
+        # the line above it.
+        if (bare !~ /[^ \t]/) {
+          if (held++ == 0) pad = $0
+          next
+        }
+        # Any run longer than a line is layout, not content, so one blank stands
+        # in for the whole run. A run that opens the capture separates nothing,
+        # and a run still held at EOF is the trailing padding the follow view
+        # would park in — both go unprinted.
+        if (seen && held) print pad
+        held = 0
+        seen = 1
+        print
       }
     '
   exit 0
