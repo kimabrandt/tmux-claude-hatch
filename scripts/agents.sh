@@ -17,10 +17,10 @@
 #   status  (default)  status rank — whatever needs you floats up
 #   recent             seconds since last activity — most recently used first
 #
-# The key counts seconds while the age column still reads in minutes: a session
-# started ten seconds ago and the one you left a minute ago are both "0m", and
-# ordering those by the displayed minute leaves the tie to sort's last-resort
-# line comparison — i.e. to pane ids.
+# The key counts seconds while the age column reads no finer than minutes: a
+# session started ten seconds ago and the one you left a minute ago are both
+# "now", and ordering those by the displayed minute leaves the tie to sort's
+# last-resort line comparison — i.e. to pane ids.
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=helpers.sh
@@ -50,6 +50,14 @@ done)"
   -v prefix="$(get_tmux_option @claude_session_prefix 'claude-')" \
   -v sort_by="$(get_tmux_option @claude_sort 'status')" '
   BEGIN { UNKNOWN = 99999999 }   # ~3 years in seconds; no real age reaches it
+  # The two largest units, no space: now, 59m, 1h6m, 2d3h. At most 6 characters.
+  function fmt_age(s,   m, h, d) {
+    m = int(s / 60); h = int(m / 60); d = int(h / 24)
+    if (m == 0) return "now"
+    if (h == 0) return m "m"
+    if (d == 0) return h "h" (m % 60) "m"
+    return d "d" (h % 24) "h"
+  }
   $1 == "P" { tty_of[$2] = $3; next }
   $1 == "T" { sub(/^\/dev\//, "", $2); pane[$2] = $3; sess[$2] = $4; loc[$2] = $5; next }
   $1 == "M" { seen_at[$2] = $3; next }
@@ -69,7 +77,7 @@ done)"
       if (secs < 0) secs = 0                     # activity in the future: clock skew
       if (secs >= UNKNOWN) secs = UNKNOWN - 1
     }
-    age = (secs != UNKNOWN) ? int(secs / 60) "m" : "-"
+    age = (secs != UNKNOWN) ? fmt_age(secs) : "-"
     kind = (index(sess[tty], prefix) == 1) ? "dedicated" : "loose"
 
     path = $5
@@ -96,7 +104,7 @@ done)"
     # whole order in recent mode.
     key = (sort_by == "recent") ? agekey : rank * (UNKNOWN + 1) + agekey
 
-    printf "%s\t%s\t%s\t%s\t%s\t%5s\t%s\t%s\n",
+    printf "%s\t%s\t%s\t%s\t%s\t%6s\t%s\t%s\n",
       key, pane[tty], $2, kind, icon, age, loc[tty], path
   }
 ' | LC_ALL=C sort -t$'\t' -k1,1n -k7,7
