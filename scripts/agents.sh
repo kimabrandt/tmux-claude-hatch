@@ -50,13 +50,14 @@ done)"
   -v prefix="$(get_tmux_option @claude_session_prefix 'claude-')" \
   -v sort_by="$(get_tmux_option @claude_sort 'status')" '
   BEGIN { UNKNOWN = 99999999 }   # ~3 years in seconds; no real age reaches it
-  # The two largest units, no space: now, 59m, 1h6m, 2d3h. At most 6 characters.
+  # The two largest units, no space: now, 59m, 1h06m, 2d03h. The second unit gets
+  # two digits so the column lines up. At most 6 characters below 100 days.
   function fmt_age(s,   m, h, d) {
     m = int(s / 60); h = int(m / 60); d = int(h / 24)
     if (m == 0) return "now"
     if (h == 0) return m "m"
-    if (d == 0) return h "h" (m % 60) "m"
-    return d "d" (h % 24) "h"
+    if (d == 0) return sprintf("%dh%02dm", h, m % 60)
+    return sprintf("%dd%02dh", d, h % 24)
   }
   $1 == "P" { tty_of[$2] = $3; next }
   $1 == "T" { sub(/^\/dev\//, "", $2); pane[$2] = $3; sess[$2] = $4; loc[$2] = $5; next }
