@@ -129,7 +129,9 @@ Every running Claude gets its own row — the picker identifies each by its
 process, not by its tmux session. So several agents in one project all show up
 separately, as does a Claude you started by hand in an ordinary pane.
 
-Last activity is read from the session's transcript, which lives in the config
+Last activity is the newest timestamped entry in the session's transcript —
+not the file's mtime, which Claude Code bumps with bookkeeping writes while the
+agent sits idle. The transcript lives in the config
 dir of the profile the agent runs under. If `@claude_command` is a wrapper that
 spans several profiles, have its `agents --json` tag each session with a
 `profile` field and the age column follows the agent into that profile's dir;

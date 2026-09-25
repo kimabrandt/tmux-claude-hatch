@@ -32,11 +32,11 @@ rows="$(printf '%s' "$agents" |
          | [.pid, .status, .sessionId, .cwd, .startedAt, (.profile // "")] | @tsv' 2>/dev/null)"
 [ -n "$rows" ] || exit 0
 
-# Resolved out here because only `stat`, outside awk, can read an mtime. The
+# Resolved out here because awk cannot read a transcript's entries itself. The
 # profile rides along because a session's transcript lives under the config dir
 # of the profile it belongs to, which is not necessarily the picker's own.
-mtimes="$(printf '%s\n' "$rows" | cut -f3,6 | while IFS=$'\t' read -r sid profile; do
-  printf 'M\t%s\t%s\n' "$sid" "$(claude_transcript_mtime "$sid" "$profile")"
+seen="$(printf '%s\n' "$rows" | cut -f3,6 | while IFS=$'\t' read -r sid profile; do
+  printf 'M\t%s\t%s\n' "$sid" "$(claude_last_activity "$sid" "$profile")"
 done)"
 
 # Three tagged streams into one awk: pid->tty, tty->pane, session->last-activity.
@@ -44,7 +44,7 @@ done)"
 {
   ps -Ao pid=,tty= 2>/dev/null | awk '{ print "P\t" $1 "\t" $2 }'
   tmux list-panes -a -F $'T\t#{pane_tty}\t#{pane_id}\t#{session_name}\t#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null
-  printf '%s\n' "$mtimes"
+  printf '%s\n' "$seen"
   printf '%s\n' "$rows" | sed $'s/^/A\t/'
 } | awk -F'\t' -v now="$(date +%s)" -v home="$HOME" \
   -v prefix="$(get_tmux_option @claude_session_prefix 'claude-')" \
@@ -66,7 +66,7 @@ done)"
     # read. This is the only thing the age column is ever allowed to show.
     secs = (seen_at[$4] != "") ? now - seen_at[$4] : UNKNOWN
     if (secs != UNKNOWN) {
-      if (secs < 0) secs = 0                     # mtime in the future: clock skew
+      if (secs < 0) secs = 0                     # activity in the future: clock skew
       if (secs >= UNKNOWN) secs = UNKNOWN - 1
     }
     age = (secs != UNKNOWN) ? int(secs / 60) "m" : "-"
