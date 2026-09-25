@@ -43,10 +43,14 @@ file_mtime() {
 # with the unsuffixed `~/.claude` as the default profile. Upstream `claude` has
 # no notion of profiles; the name comes from a wrapper in the @claude_command
 # slot that runs several config dirs side by side and tags each session with the
-# one it lives in. An empty name means no wrapper said, so use the default.
+# one it lives in. An empty name means no wrapper said, so use the picker's own.
+#
+# A named default profile is the plain ~/.claude, not our CLAUDE_CONFIG_DIR: that
+# names whichever profile tmux was started under, which may well be another one.
 claude_profile_dir() {
   case "$1" in
-  '' | dev | default) printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ;;
+  '') printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ;;
+  dev | default) printf '%s' "$HOME/.claude" ;;
   *) printf '%s' "$HOME/.claude-$1" ;;
   esac
 }
@@ -70,7 +74,7 @@ claude_transcript_mtime() {
   local f
   for f in "$(claude_profile_dir "${2:-}")"/projects/*/"$1".jsonl \
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$1".jsonl \
-    "$HOME"/.claude-*/projects/*/"$1".jsonl; do
+    "$HOME"/.claude*/projects/*/"$1".jsonl; do
     [ -f "$f" ] && {
       file_mtime "$f"
       return
